@@ -25,7 +25,7 @@ set(OPT_INCLUDES "")
 set(OPT_LIBS "")
 set(FILAMENT_INCLUDE "${FILAMENT_DIR}/out/debug/filament/include/"
                      "${FILAMENT_DIR}/libs/utils/include/"
-                     "${FILAMENT_DIR}/third_party/robin-map/",
+                     "${FILAMENT_DIR}/third_party/robin-map/"
                      "${FILAMENT_DIR}/libs/imageio/include")
 if (WIN32)
    list(APPEND OPT_INCLUDES "include/win/")
