@@ -169,11 +169,11 @@ namespace bulb
          return false;
       if (! S_ISDIR(sb.st_mode))
          return false;
-      const char* assetName = AAssetDir_getNextFileName(dir);
+      const char* assetName = AAssetDir_getNextFileName(dir.get());
       unsigned char buf[8192];
       while (assetName != nullptr)
       {
-         struct DD { void operator()(AAsset* p) const { if (p) AAsset_close((p); }; };
+         struct DD { void operator()(AAsset* p) const { if (p) AAsset_close(p); }; };
          DD dd;
          std::unique_ptr<AAsset, DD> asset(AAssetManager_open(androidAssetManager, assetName, AASSET_MODE_STREAMING), dd);
          int count = AAsset_read(asset.get(), buf, 8192);
@@ -191,7 +191,7 @@ namespace bulb
                count = AAsset_read(asset.get(), buf, 8192);
             }
          }
-         assetName = AAssetDir_getNextFileName(dir);
+         assetName = AAssetDir_getNextFileName(dir.get());
       }
       return true;
    }
@@ -276,10 +276,9 @@ namespace bulb
          }
          return true;
       }
-
+#endif
    private:
       AssetReader() = default;
-#endif
    };
 }
 #endif

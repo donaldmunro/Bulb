@@ -21,7 +21,8 @@ depth by not requiring an extra node for the final transform before the leaf Dra
 Vertex-and-IndexBuffer that can optionally have a Material or inherit a Material from a predecessor
 Material node. Can also open a filament filamesh format file.
 * MultiGeometry - A multi-Entity Drawable with the root entity held in Drawable and the remaining
-children entities in MultiGeometry. Can load a .gltf 3D format model using filament gltfio.
+children entities in MultiGeometry. Can load a .gltf 3D format model using filament gltfio, (which
+does not support multithreading at the moment so loading models is a bottleneck).
 * Material - A Composite whose descendents can inherit the material specified in the node.
 * PositionalLight - A light that is positioned using predecessor transform nodes.
 

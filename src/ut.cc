@@ -11,7 +11,9 @@
 #include <pwd.h>
 #endif
 
+#ifdef HAVE_LIBZIP
 #include <zip.h>
+#endif
 
 #include "filament/Box.h"
 #include "math/quat.h"
