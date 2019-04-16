@@ -67,3 +67,23 @@ Loading gltf files from zip archives requires libzip to be findable by CMake (no
 The samples are best used with SDL2 although they should fall back to barebones XLib or Win32.
 libpng is required for screenshots in the orbits sample.
 
+##Building for Android 
+Bulb requires the full gltfio for loading gltf models but the Android Filament build does not currently
+link the full libgltfio.a library. To get around this alter the CMakeLists.txt file in 
+${FILAMENT-DIR}/libs/gltfio/ to remove ANDROID from the if statement below:
+
+~~~~
+#if (NOT WEBGL AND NOT ANDROID AND NOT IOS)
+if (NOT WEBGL AND NOT IOS)
+
+    # ==================================================================================================
+    # Link the core library against filamat to create the "full" library
+    # ==================================================================================================
+~~~~
+
+Also remove bluegl and imageio from the ${FILAMENT_BASELIBS} list in the Bulb CMakeLists.txt
+(bluegl is probably not used anyway and imageio is used in the samples for writing screenshots
+images).
+
+
+
