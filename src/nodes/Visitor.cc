@@ -4,6 +4,7 @@
 #include "bulb/nodes/Drawable.hh"
 #include "bulb/nodes/Material.hh"
 #include "bulb/nodes/Materializable.hh"
+#include "bulb/nodes/Geometry.hh"
 
 namespace bulb
 {
@@ -26,7 +27,10 @@ namespace bulb
       {
          Materializable* m = dynamic_cast<Materializable*>(draw);
          if (m != nullptr)
+         {
             m->set_material(currentMaterial);
+//            std::cout << "Set material from node: " << m->get_material()->getName() << " for " << draw->get_name() << std::endl;
+         }
       }
       draw->pre_render(renderables);
    }

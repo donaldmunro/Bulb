@@ -1,6 +1,7 @@
 #include "bulb/Managers.hh"
 #include "bulb/SceneGraph.hh"
 
+#include "backend/Platform.h"
 
 namespace bulb
 {
@@ -29,6 +30,8 @@ namespace bulb
                              renderables.push_back(pp.second);
                           });
          }
+         if ( (backgroundTexture) && (background) )
+            renderables.push_back(background);
          root->traverse(v.get());
          scenePtr->addEntities(renderables.data(), renderables.size());
          view->setScene(scenePtr.get());
@@ -470,6 +473,68 @@ namespace bulb
          directional_lights.erase(it);
          dirty = true;
       }
+   }
+
+   filament::Texture* SceneGraph::add_background(int z, uint32_t width, uint32_t height,
+                                   filament::Material* backgroundMaterial,
+                                   filament::TextureSampler backgroundSampler)
+   //---------------------------------------------------------------------
+   {
+      this->backgroundMaterial = backgroundMaterial;
+      this->backgroundSampler = backgroundSampler;
+      backgroundTexture = filament::Texture::Builder().width(width).height(height).levels(1).
+                                                       sampler(filament::Texture::Sampler::SAMPLER_2D).
+                                                       format(filament::Texture::InternalFormat::RGBA8).build(*engine);
+      if (backgroundTexture == nullptr)
+         return nullptr;
+      filament::VertexBuffer* texvb = nullptr;
+      filament::IndexBuffer* texib = nullptr;
+      struct TexVertex3D
+      {
+         filament::math::float3 position;
+         filament::math::float2 uv;
+      };
+      const TexVertex3D QUAD_VERTICES[4] =
+      {
+            {{-1, -1, z}, {0, 0}},
+            {{ 1, -1, z}, {1, 0}},
+            {{-1,  1, z}, {0, 1}},
+            {{ 1,  1, z}, {1, 1}},
+      };
+      constexpr uint16_t QUAD_INDICES[6] = {0, 1, 2, 3, 2, 1,};
+      texvb = filament::VertexBuffer::Builder().vertexCount(4).bufferCount(1).
+                                                attribute(filament::VertexAttribute::POSITION, 0,
+                                                          filament::VertexBuffer::AttributeType::FLOAT3, 0, 20).
+                                                attribute(filament::VertexAttribute::UV0, 0,
+                                                          filament::VertexBuffer::AttributeType::FLOAT2, 12, 20).build(*engine);
+      texib = filament::IndexBuffer::Builder().indexCount(6).bufferType(filament::IndexBuffer::IndexType::USHORT).build(*engine);
+      texvb->setBufferAt(*engine, 0, filament::VertexBuffer::BufferDescriptor(QUAD_VERTICES, 80, nullptr));
+      texib->setBuffer(*engine, filament::IndexBuffer::BufferDescriptor(QUAD_INDICES, 12, nullptr));
+      background = Managers::instance().entityManager.create();
+      filament::RenderableManager::Builder(1).boundingBox({{ -1, -1, -1 }, { 1, 1, 1 }}).
+                                              material(0, backgroundMaterial->getDefaultInstance()).
+                                              geometry(0, filament::RenderableManager::PrimitiveType::TRIANGLES,
+                                                       texvb, texib, 0, 6).
+                                              culling(false) .receiveShadows(false).castShadows(false).
+                                              build(*engine, background);
+      return (backgroundTexture);
+   }
+
+   static void* delete_buffer(void* buffer, size_t size, void* user)
+   {
+      delete[] static_cast<unsigned char*>(buffer);
+      return nullptr;
+   }
+
+   bool SceneGraph::set_background(unsigned char* data, filament::backend::BufferDescriptor::Callback dataDeletor)
+   //-------------------------------------------------
+   {
+      size_t w = backgroundTexture->getWidth(0), h = backgroundTexture->getHeight(0);
+      filament::Texture::PixelBufferDescriptor buffer(data, size_t(w * h * 4),
+                                                   filament::Texture::Format::RGBA, filament::Texture::Type::UBYTE,
+                                                   dataDeletor);
+      backgroundTexture->setImage(*engine, 0, std::move(buffer));
+      return true;
    }
 
    std::vector<bulb::Transform*> SceneGraph::get_animated_transforms()

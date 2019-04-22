@@ -34,7 +34,7 @@ namespace bulb
          return *this;
       }
 
-      bulb::Material& operator()(const char* paramName, filament::Texture* texture,
+      bulb::Material& operator()(const char* textureName, filament::Texture* texture,
                                  filament::TextureSampler::MinFilter minFilter = filament::TextureSampler::MinFilter::NEAREST,
                                  filament::TextureSampler::MagFilter magFilter = filament::TextureSampler::MagFilter::NEAREST,
                                  filament::TextureSampler::WrapMode wrapModeS = filament::TextureSampler::WrapMode::CLAMP_TO_EDGE,
@@ -43,7 +43,20 @@ namespace bulb
                                  filament::TextureSampler::CompareMode compareMode = filament::TextureSampler::CompareMode::NONE,
                                  filament::TextureSampler::CompareFunc compareFunc = filament::TextureSampler::CompareFunc::LE);
 
+      void setTexture(const char* textureName, filament::Texture* texture,
+                      filament::TextureSampler::MinFilter minFilter = filament::TextureSampler::MinFilter::NEAREST,
+                      filament::TextureSampler::MagFilter magFilter = filament::TextureSampler::MagFilter::NEAREST,
+                      filament::TextureSampler::WrapMode wrapModeS = filament::TextureSampler::WrapMode::CLAMP_TO_EDGE,
+                      filament::TextureSampler::WrapMode wrapModeT = filament::TextureSampler::WrapMode::CLAMP_TO_EDGE,
+                      filament::TextureSampler::WrapMode wrapModeR = filament::TextureSampler::WrapMode::CLAMP_TO_EDGE,
+                      filament::TextureSampler::CompareMode compareMode = filament::TextureSampler::CompareMode::NONE,
+                      filament::TextureSampler::CompareFunc compareFunc = filament::TextureSampler::CompareFunc::LE);
+
       filament::Material* get_material() { return material; }
+
+      filament::Texture* operator[](const char* textureName) { return get_texture(textureName); }
+
+      filament::Texture* get_texture(const char *textureName);
 
    protected:
       filament::Material* material;

@@ -43,7 +43,7 @@ Win::Win(unsigned w, unsigned h,
          bgraIndex = i;
       if ( (rgbaIndex < 0) && (vi.red_mask == 0xFF0000) && (vi.green_mask == 0xFF00) && (vi.blue_mask == 0xFF) )
          rgbaIndex = i;
-      // std::cout << i << ": " << vi.red_mask << " " << vi.green_mask << " " << vi.blue_mask << std::endl;
+      std::cout << i << ": " << vi.red_mask << " " << vi.green_mask << " " << vi.blue_mask << " " << vi.depth << std::endl;
    }
    int index = (bgraIndex >= 0) ? bgraIndex : rgbaIndex;
    if (index < 0)

@@ -151,6 +151,39 @@ namespace bulb
       return AAsset_getLength(asset_p.get());
    }
 
+   char* read_asset_buffer(const char* assetname, size_t &n)
+   //-----------------------------------------------------------
+   {
+      n = 0;
+      if (androidAssetManager == nullptr)
+      {
+         s.clear();
+         return nullptr;
+      }
+      std::string assetName(assetname);
+      if (assetName.find("assets/") == 0)
+         assetName = "/" + assetName.substr(7);
+      struct D { void operator()(AAsset* p) const { if (p) AAsset_close(p); }; };
+      D d;
+      std::unique_ptr<AAsset, D> asset_p(AAssetManager_open(androidAssetManager, assetName.c_str(), AASSET_MODE_BUFFER), d);
+      if (! asset_p)
+      {
+         s.clear();
+         return nullptr;
+      }
+      n = AAsset_getLength(asset_p.get());
+      if (n == 0)
+         return nullptr;
+      char* pch = new char[n];
+      int rlen = AAsset_read(asset_p.get(), pch, len);
+      if (rlen < len)
+      {
+         s.clear();
+         return nullptr;
+      }
+      return pch;
+   }
+
    bool copy_assets_to(const char *assetdir, const char *sdcardDir, bool isRecurse=false)
    //-------------------------------------------------------------------------------------
    {
@@ -224,6 +257,23 @@ namespace bulb
             v.emplace_back(x);
          }
          return true;
+      }
+
+      char* read_asset_buffer(const char* assetname, size_t &n)
+      //-----------------------------------------------------------
+      {
+         n = 0;
+         std::ifstream ifs(assetname);
+         if (!ifs.good())
+            return nullptr;
+         n = asset_length(assetname);
+         if (n == 0)
+            return nullptr;
+         char* contents = new char[n];
+         ifs.read(contents, n);
+         if (!ifs.good())
+            return nullptr;
+         return contents;
       }
 
       bool read_asset_string(const char* assetname, std::string& s)

@@ -38,6 +38,10 @@ namespace bulb
       filament::Material* material = nullptr;
       filament::VertexBuffer* meshVertexBuffer = nullptr;
       filament::IndexBuffer* meshIndexBuffer = nullptr;
+
+   private:
+      char* filameshData = nullptr;
+      static void delete_filamesh(void* p, size_t size, void* user);
    };
 }
 #endif

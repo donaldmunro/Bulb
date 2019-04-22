@@ -20,10 +20,11 @@ namespace bulb
       filament::Engine* engine = Managers::instance().engine.get();
       if (engine == nullptr) return false;
       material = filament::Material::Builder().package(materialData.data(), materialData.size()).build(*engine);
+      set_name(name);
       return material != nullptr;
    }
 
-   bulb::Material& Material::operator()(const char* paramName, filament::Texture* texture,
+   bulb::Material& Material::operator()(const char* textureName, filament::Texture* texture,
                                         filament::TextureSampler::MinFilter minFilter,
                                         filament::TextureSampler::MagFilter magFilter,
                                         filament::TextureSampler::WrapMode wrapModeS,
@@ -33,12 +34,34 @@ namespace bulb
                                         filament::TextureSampler::CompareFunc compareFunc)
    //-------------------------------------------------------------------------------------
    {
-      std::string paramname(paramName);
+      setTexture(textureName, texture, minFilter, magFilter, wrapModeS, wrapModeT, wrapModeR, compareMode, compareFunc);
+      return *this;
+   }
+
+   void Material::setTexture(const char* textureName, filament::Texture* texture,
+                             filament::TextureSampler::MinFilter minFilter,
+                             filament::TextureSampler::MagFilter magFilter,
+                             filament::TextureSampler::WrapMode wrapModeS, filament::TextureSampler::WrapMode wrapModeT,
+                             filament::TextureSampler::WrapMode wrapModeR,
+                             filament::TextureSampler::CompareMode compareMode,
+                             filament::TextureSampler::CompareFunc compareFunc)
+   //-------------------------------------------------------------------------------------------------------------------
+   {
+      std::string paramname(textureName);
       textures[paramname] = texture;
       samplers.emplace(std::make_pair(paramname, filament::TextureSampler(minFilter, magFilter, wrapModeS, wrapModeT,
                                                                           wrapModeR)));
       samplers[paramname].setCompareMode(compareMode, compareFunc);
-      material->setDefaultParameter(paramName, texture, samplers[paramname]);
-      return *this;
+      material->setDefaultParameter(textureName, texture, samplers[paramname]);
+   }
+
+   filament::Texture* Material::get_texture(const char* textureName)
+   //---------------------------------------------------------------
+   {
+      std::string paramname(textureName);
+      auto it = textures.find(paramname);
+      if (it != textures.end())
+         return it->second;
+      return nullptr;
    }
 }

@@ -10,6 +10,8 @@
 
 namespace bulb
 {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
 
    template<typename T> static inline bool near_zero(T v, T epsilon);
 
@@ -18,6 +20,8 @@ namespace bulb
    template<> bool near_zero(double v, double epsilon) { return (fabs(v) <= epsilon); }
 
    template<> bool near_zero(float v, float epsilon) { return (fabsf(v) <= epsilon); }
+
+#pragma clang diagnostic pop
 
    template<typename T> constexpr T pi = T(3.1415926535897932385);
 

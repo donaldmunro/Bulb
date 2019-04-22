@@ -59,7 +59,7 @@ std::unique_ptr<Win> window;
 #endif
 
 void* nativeWindow = nullptr;
-int window_width =1024, window_height =768;
+int windowWidth =1024, windowHeight =768;
 bool isFreeze = false;
 #ifdef HAVE_LIBPNG
 bool isScreenShot = false;
@@ -69,7 +69,7 @@ filament::SwapChain* swapChain = nullptr;
 filament::View* view = nullptr;
 filament::VertexBuffer* vb = nullptr, *texvb = nullptr;
 filament::IndexBuffer* ib = nullptr, *texib = nullptr;
-filament::Camera* camera = nullptr;
+filament::Camera* perspectiveCamera = nullptr;
 CameraManipulator* cameraManipulator = nullptr;
 
 double minor_axis(double majorAxis, double eccentricity) { return majorAxis*sqrt(1 - eccentricity*eccentricity); }
@@ -177,10 +177,10 @@ int main(int argc, char** argv)
    }
    if ( (dm.w > 0) && (dm.h > 0) )
    {
-      window_width = std::max(dm.w - 20, window_width);
-      window_height = std::max(dm.h - 20, window_height);
+      windowWidth = std::max(dm.w - 20, windowWidth);
+      windowHeight = std::max(dm.h - 20, windowHeight);
    }
-   window = SDL_CreateWindow("Orbits", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, window_width, window_height,
+   window = SDL_CreateWindow("Orbits", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, windowWidth, windowHeight,
                              SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
    if (window == nullptr)
    {
@@ -255,14 +255,14 @@ void on_post_render(filament::Engine* engine, filament::View* view, filament::Re
                  filament::Scene* scene, void*)
 //-------------------------------------------------------------------------------------------
 {
-   uint8_t* pixels = new uint8_t[window_width * window_height * 3];
-   filament::backend::PixelBufferDescriptor buffer(pixels, window_width * window_height * 3,
+   uint8_t* pixels = new uint8_t[windowWidth * windowHeight * 3];
+   filament::backend::PixelBufferDescriptor buffer(pixels, windowWidth * windowHeight * 3,
                                                    filament::backend::PixelBufferDescriptor::PixelDataFormat::RGB,
                                                    filament::backend::PixelBufferDescriptor::PixelDataType::UBYTE,
                                                    [](void* buffer, size_t size, void* user)
                                                    {
-                                                      image::LinearImage image(toLinear<uint8_t>(window_width,
-                                                         window_height, window_width * 3, static_cast<uint8_t*>(buffer)));
+                                                      image::LinearImage image(toLinear<uint8_t>(windowWidth,
+                                                         windowHeight, windowWidth * 3, static_cast<uint8_t*>(buffer)));
                                                       std::ofstream outputStream("screenshot.png",
                                                                                  std::ios::binary | std::ios::trunc);
                                                       image::ImageEncoder::encode(outputStream,
@@ -271,7 +271,7 @@ void on_post_render(filament::Engine* engine, filament::View* view, filament::Re
 
                                                       delete[] static_cast<uint8_t*>(buffer);
                                                    });
-   renderer->readPixels(0, 0, window_width, window_height, std::move(buffer));
+   renderer->readPixels(0, 0, windowWidth, windowHeight, std::move(buffer));
 }
 #endif
 
@@ -348,7 +348,7 @@ void destroy_graph()
    if (engine)
    {
       filament::Fence::waitAndDestroy(engine->createFence());
-      if (camera) engine->destroy(camera); camera = nullptr;
+      if (perspectiveCamera) engine->destroy(perspectiveCamera); perspectiveCamera = nullptr;
       if (swapChain) engine->destroy(swapChain);
       if (view) engine->destroy(view);
       if (vb) engine->destroy(vb); vb = nullptr;
@@ -405,19 +405,19 @@ bool create_graph()
    view = engine->createView();
    view->setClearColor({0, 0, 0, 1.0});
 #ifdef HAVE_SDL2
-   SDL_GetWindowSize(window, &window_width, &window_height);
+   SDL_GetWindowSize(window, &windowWidth, &windowHeight);
 #else
    window_width = window->width; window_height = window->height;
 #endif
-   view->setViewport({0, 0, static_cast<uint32_t>(window_width), static_cast<uint32_t>(window_height)});
-   camera = engine->createCamera();
-   camera->setProjection(70, double(window_width) / double(window_height), 0.0625, 20);
-   cameraManipulator = new CameraManipulator(camera, static_cast<size_t>(window_width),
-                                             static_cast<size_t>(window_height));
+   view->setViewport({0, 0, static_cast<uint32_t>(windowWidth), static_cast<uint32_t>(windowHeight)});
+   perspectiveCamera = engine->createCamera();
+   perspectiveCamera->setProjection(70, double(windowWidth) / double(windowHeight), 0.0625, 20);
+   cameraManipulator = new CameraManipulator(perspectiveCamera, static_cast<size_t>(windowWidth),
+                                             static_cast<size_t>(windowHeight));
    cameraManipulator->lookAt(filament::math::double3(0, 0, -4.2), filament::math::double3(0, 0, -1));
 
    cameraTranslation = cameraManipulator->get_translation();
-   view->setCamera(camera);
+   view->setCamera(perspectiveCamera);
    graph = std::make_unique<bulb::SceneGraph>(engine, swapChain, view);
 
    while (!graph->start_updating())  // Not really necessary here, but good practise for multithreaded updates to the graph

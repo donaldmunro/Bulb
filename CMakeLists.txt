@@ -65,7 +65,7 @@ if(LIBZIP_LIBRARY)
    MESSAGE(STATUS "LibZip Lib:     ${LIBZIP_LIBRARY}")
 endif()
 
-set(SAMPLE_FLAGS -stdlib=libc++ -std=c++14 -fstandalone-debug -Wno-unused-function)
+set(SAMPLE_FLAGS -stdlib=libc++ -std=c++17 -fstandalone-debug -Wno-unused-function)
 set(SAMPLE_INCLUDES "")
 set(SAMPLE_LIBS "")
 
@@ -124,11 +124,11 @@ target_link_options(bulb PRIVATE -stdlib=libc++ -std=c++14)
 
 set(SAMPLES "samples/src/")
 add_executable(simpletest ${SAMPLES}/simpletest.cc ${SAMPLES}/Win.hh ${SAMPLES}/Win.cc)
-target_compile_options(simpletest PRIVATE -stdlib=libc++ -std=c++14 -fstandalone-debug -fno-rtti -Wall)
-target_include_directories(simpletest PRIVATE ${PROJECT_SOURCE_DIR}/samples ${PROJECT_SOURCE_DIR}/include
+target_compile_options(simpletest PRIVATE ${SAMPLE_FLAGS})
+target_include_directories(simpletest PRIVATE ${PROJECT_SOURCE_DIR}/samples ${PROJECT_SOURCE_DIR}/include ${SAMPLE_INCLUDES}
                           ${X11_INCLUDE_DIR} ${FILAMENT_INCLUDE} ${INCLUDE} ${OPENGL_INCLUDE_DIR} ${Vulkan_INCLUDE_DIRS})
 target_link_directories(simpletest PRIVATE ${FILAMENT_LIBDIR})
-target_link_libraries(simpletest dl ${X11_LIBRARIES} Threads::Threads ${Vulkan_LIBRARIES} ${FILAMENT_LIBS} bulb)
+target_link_libraries(simpletest dl ${X11_LIBRARIES} ${SAMPLE_LIBS} Threads::Threads ${Vulkan_LIBRARIES} ${FILAMENT_LIBS} bulb)
 target_link_options(simpletest PRIVATE -stdlib=libc++)
 
 if(SDL2_FOUND)

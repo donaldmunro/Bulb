@@ -8,6 +8,7 @@
 #include "filament/Engine.h"
 #include "backend/Platform.h"
 #include "filament/Renderer.h"
+#include "filament/Camera.h"
 #include "filament/Scene.h"
 #include "filament/View.h"
 #include "filament/Material.h"
@@ -29,8 +30,17 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb/stb_image_resize.h"
 
+#ifdef HAVE_SDL2
+#include "SDL.h"
+#include <SDL_syswm.h>
+
+SDL_Window* window = nullptr;
+#else
 #include "Win.hh"
+#endif
 
 struct ColorVertex3D
 {
@@ -74,20 +84,24 @@ static std::vector<TexVertex3D> QUAD_VERTICES =
 
 static constexpr uint16_t QUAD_INDICES[6] = {0, 1, 2, 3, 2, 1,};
 
+unsigned windowWidth =0, windowHeight =0;
+void* nativeWindow = nullptr;
 filament::SwapChain* swapChain = nullptr;
 filament::View* view = nullptr;
 filament::VertexBuffer* vb = nullptr, *texvb = nullptr;
 filament::IndexBuffer* ib = nullptr, *texib = nullptr;
-filament::Camera* camera = nullptr;
+filament::Camera* perspectiveCamera = nullptr, *orthoCamera = nullptr;
 
+#ifndef HAVE_SDL2
 std::unique_ptr<Win> window;
+#endif
 std::unique_ptr<bulb::SceneGraph> graph;
 
 void event_loop();
 bool create_graph();
 void destroy_graph();
 
-std::string bakedColor("samples/material/bakedColor.opengl"), bakedTexture("samples/material/bakedTexture.opengl"),
+std::string bakedColor("samples/material/bakedColor"), bakedTexture("samples/material/bakedTexture"),
             textureFile("samples/texture/gravel.png"), cubeModel("samples/model/cube/cube.filamesh"),
             cubeTextureFile("samples/model/cube/default.png");
 
@@ -100,6 +114,8 @@ void window_resized(unsigned lastWidth, unsigned lastHeight, unsigned newWidth, 
 {
    if ( (graph) && ( (lastWidth != newWidth) || (lastHeight != newHeight) ) )
       destroy_graph();
+   windowWidth = newWidth;
+   windowHeight = newHeight;
    if (! graph)
    {
       if (! create_graph())
@@ -118,14 +134,59 @@ int main(int argc, char** argv)
       std::string arg(argv[1]);
       std::transform(arg.begin(), arg.end(), arg.begin(), ::tolower);
       if ( (arg == "vulkan") || (arg == "vulcan") )
-      {
          bulb::SELECTED_BACKEND = filament::Engine::Backend::VULKAN;
-         bakedColor = "samples/material/bakedColor.vulkan";
-         bakedTexture = "samples/material/bakedTexture.vulkan";
-      }
    }
+#ifdef HAVE_SDL2
+   if (SDL_Init(SDL_INIT_EVENTS /*| SDL_INIT_VIDEO*/) < 0)
+   {
+      std::cerr << "Error initializing SDL\n";
+      return 1;
+   }
+   SDL_DisplayMode dm;
+   dm.w = dm.h = -1;
+   if (SDL_GetCurrentDisplayMode(0, &dm) != 0)
+   {
+      SDL_Window* tmpwin = SDL_CreateWindow("Dummy", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1, 1,
+                                            SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+      if (SDL_GetCurrentDisplayMode(0, &dm) != 0)
+         dm.w = dm.h = -1;
+      if (tmpwin != nullptr)
+         SDL_DestroyWindow(tmpwin);
+   }
+   if ( (dm.w > 0) && (dm.h > 0) )
+   {
+      windowWidth = std::max(dm.w - 20, static_cast<int>(windowWidth));
+      windowHeight = std::max(dm.h - 20, static_cast<int>(windowHeight));
+   }
+   window = SDL_CreateWindow("SimpleTest", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, windowWidth, windowHeight,
+                             SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+   if (window == nullptr)
+   {
+      std::cerr << "Error creating SDL window " << SDL_GetError() << std::endl;
+      return 1;
+   }
+   SDL_SysWMinfo wmi;
+   SDL_VERSION(&wmi.version);
+   if (SDL_GetWindowWMInfo(window, &wmi) == SDL_TRUE)
+   {
+#ifdef WIN32
+      nativeWindow = reinterpret_cast<void*>(wmi.info.win.window);
+#else
+      nativeWindow = reinterpret_cast<void*>(wmi.info.x11.window);
+#endif
+   }
+   else
+   {
+      std::cerr << "Error getting native window handle from SDL\n";
+      return 1;
+   }
+   if (! create_graph())
+   {
+      std::cerr << "Error creating scene graph\n";
+      std::exit(1);
+   }
+#else
    std::vector<unsigned char> v;
-   unsigned window_width, window_height;
    const std::vector<std::pair<unsigned int, unsigned int>>& winSizes = Win::sizes();
    if (! winSizes.empty())
    {
@@ -139,8 +200,36 @@ int main(int argc, char** argv)
    }
    std::function<void(unsigned, unsigned, unsigned, unsigned)> f = window_resized;
    window.reset(new Win(window_width, window_height, f));
+   nativeWindow = reinterpret_cast<void*>(window->native_window());
+#endif
    event_loop();
 }
+
+#ifdef HAVE_SDL2
+bool process_sdl_events(int maxEvents =16)
+//-----------------------
+{
+   SDL_Event ev;
+   int count = 0;
+   while (SDL_PollEvent(&ev))
+   {
+      if (count++ > maxEvents) return true;
+      switch (ev.type)
+      {
+         case SDL_QUIT: return false;
+         case SDL_KEYUP:
+         {
+            int key = ev.key.keysym.scancode;
+            bool isCtrl = ((SDL_GetModState() & KMOD_CTRL) != 0);
+            bool isShift = ((SDL_GetModState() & KMOD_SHIFT) != 0);
+            if ( (key == SDL_SCANCODE_ESCAPE) || ( (key == SDL_SCANCODE_Q) && (isCtrl) ) )
+               return false;
+         }
+      }
+   }
+   return true;
+}
+#endif
 
 void event_loop()
 //---------------
@@ -151,6 +240,11 @@ void event_loop()
    bool is_quit = false;
    do
    {
+#ifdef HAVE_SDL2
+      if (window == nullptr) continue;
+      if (! process_sdl_events())
+         break;
+#else
       if (! window)
       {
          std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -158,10 +252,10 @@ void event_loop()
       }
       if (! window->process_event())
          break;
+#endif
       if (! graph) continue;
       auto frame_end = std::chrono::high_resolution_clock::now();
       long elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(frame_end - frame_start).count(), last_duration;
-      std::cout << elapsed << " " << spf << std::endl;
       if (elapsed >= spf)
       {
          graph->render();
@@ -172,7 +266,9 @@ void event_loop()
          std::this_thread::sleep_for(std::chrono::milliseconds(5));
    } while (! is_quit);
    destroy_graph();
+#ifndef HAVE_SDL2
    window.reset();
+#endif
 }
 
 void destroy_graph()
@@ -181,7 +277,8 @@ void destroy_graph()
    std::shared_ptr<filament::Engine> engine = bulb::Managers::instance().engine;
    if (engine)
    {
-      if (camera) engine->destroy(camera); camera = nullptr;
+      if (perspectiveCamera) engine->destroy(perspectiveCamera); perspectiveCamera = nullptr;
+      if (orthoCamera) engine->destroy(orthoCamera); orthoCamera = nullptr;
       if (vb) engine->destroy(vb); vb = nullptr;
       if (ib) engine->destroy(ib); ib = nullptr;
       graph.reset(nullptr);
@@ -213,21 +310,27 @@ bool create_graph()
 //------------------------------------
 {
    std::shared_ptr<filament::Engine> engine = bulb::Managers::instance().engine;
-   swapChain = engine->createSwapChain(window->native_window());
+   swapChain = engine->createSwapChain(nativeWindow);
    view = engine->createView();
-   view->setClearColor({0, 0, 0, 1.0});
-   view->setViewport({ 0, 0, window->width, window->height });
-   camera = engine->createCamera();
-//   camera->lookAt({0, 0, 0}, {0, 0, -1}, {0, 1, 0});
-   std::cout << "Camera position " << camera->getPosition() << "Forward " << camera->getForwardVector() << std::endl;
+   view->setClearColor(filament::Color::toLinear({0, 0.5, 0.5, 1.0}));
+   view->setViewport({ 0, 0, windowWidth, windowHeight });
+   perspectiveCamera = engine->createCamera();
+   perspectiveCamera->lookAt({0, 0, 0.1}, {0, 0, -1}, {0, 1, 0});
+   std::cout << "Camera position " << perspectiveCamera->getPosition() << "Forward " << perspectiveCamera->getForwardVector() << std::endl;
 //   camera->setProjection(45, 16.0/9.0, 0.1, 1.0);
-   view->setCamera(camera);
+   perspectiveCamera->setProjection(50, double(windowWidth) / double(windowHeight), 0.0625, 10.0); //, filament::Camera::Fov::HORIZONTAL);
+//   std::cout << "Contains (-0.15, 0.06, " << TRIANGLE_Z << ") " << (perspectiveCamera->getFrustum().contains({-0.15, 0.06, TRIANGLE_Z}) < 0) << std::endl;
+   orthoCamera = engine->createCamera();
+   orthoCamera->setProjection(filament::Camera::Projection::ORTHO, -3, 3, -3 * double(windowHeight) / double(windowWidth),
+                              3 * double(windowHeight) / double(windowWidth), 0.0625, 10.0);
+   orthoCamera->lookAt({0, 0, 0.1}, {0, 0, -1}, {0, 1, 0});
+   view->setCamera(perspectiveCamera);
    graph = std::make_unique<bulb::SceneGraph>(engine, swapChain, view);
 
    while (! graph->start_updating())  // Not really necessary here, but good practise for multithreaded updates to the graph
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
    bulb::Composite* root = graph->make_root("root");
-   bulb::Material* colorMaterialNode = graph->make_material(bakedColor.c_str(), "Color Material");
+   bulb::Material* colorMaterialNode = graph->make_material("Color Material", bakedColor.c_str());
    if (colorMaterialNode == nullptr)
    {
       std::cerr << "Error opening material file " << bakedColor << std::endl;
@@ -236,9 +339,8 @@ bool create_graph()
    root->add_child(colorMaterialNode);
 
    bulb::AffineTransform* triangleTransform1 = graph->make_affine_transform("Triangle 1 Transform", filament::math::mat3(1),
-                                                                            filament::math::double3(-0.75, 0.75, 0),
-                                                                            filament::math::double3(0.25, 0.25, 1));
-   triangleTransform1->set_name("Transform 1");
+                                                                            filament::math::double3(-0.15, 0.06, 0),
+                                                                            filament::math::double3(0.025, 0.025, 1));
    colorMaterialNode->add_child(triangleTransform1);
    vb = filament::VertexBuffer::Builder().bufferCount(1).vertexCount(3)
                                          .attribute(filament::VertexAttribute::POSITION, 0, filament::VertexBuffer::AttributeType::FLOAT3, 0, 16)
@@ -248,8 +350,7 @@ bool create_graph()
    ib = filament::IndexBuffer::Builder().indexCount(3).bufferType(filament::IndexBuffer::IndexType::USHORT).build(*engine);
    vb->setBufferAt(*engine, 0, filament::VertexBuffer::BufferDescriptor(TRIANGLE_VERTICES.data(), 48, nullptr));
    ib->setBuffer(*engine, filament::IndexBuffer::BufferDescriptor(TRIANGLE_INDICES, 6, nullptr));
-   bulb::Geometry* triangleNode1 = graph->make_geometry();
-   triangleNode1->set_name("Triangle 1");
+   bulb::Geometry* triangleNode1 = graph->make_geometry("Triangle 1");
    triangleTransform1->add_child(triangleNode1);
    filament::RenderableManager::Builder(1).boundingBox(to_box(TRIANGLE_VERTICES)) //material is inherited from material node
                                           .geometry(0, filament::RenderableManager::PrimitiveType::TRIANGLES, vb, ib, 0, 3)
@@ -261,10 +362,8 @@ bool create_graph()
    bulb::AffineTransform* triangleTransform2 = graph->make_affine_transform("Triangle 2 Transform", filament::math::mat3(1),
                                                                             filament::math::double3(0.5*4, 0, 0),
                                                                             filament::math::double3(1, 1, 1));
-   triangleTransform2->set_name("Transform 2");
    triangleTransform1->add_child(triangleTransform2);
-   bulb::Geometry* triangleNode2 = graph->make_geometry();
-   triangleNode2->set_name("Triangle 2");
+   bulb::Geometry* triangleNode2 = graph->make_geometry("Triangle 2");
    triangleTransform2->add_child(triangleNode2);
    filament::RenderableManager::Builder(1).boundingBox(to_box(TRIANGLE_VERTICES))
                                           .geometry(0, filament::RenderableManager::PrimitiveType::TRIANGLES, vb, ib, 0, 3)
@@ -273,7 +372,7 @@ bool create_graph()
                                           .castShadows(false)
                                           .build(*engine, triangleNode2->get_renderable());
 
-   bulb::Material* texMaterialNode = graph->make_material(bakedTexture.c_str(), "Texture Material");
+   bulb::Material* texMaterialNode = graph->make_material("Texture Material", bakedTexture.c_str());
    if (texMaterialNode == nullptr)
    {
       std::cerr << "Error opening material file " << bakedTexture << std::endl;
@@ -281,21 +380,20 @@ bool create_graph()
    }
    root->add_child(texMaterialNode);
    int w, h, channels;
-   std::shared_ptr<unsigned char> img(stbi_load(textureFile.c_str(), &w, &h, &channels, 4),
-                                      [](unsigned char* p) { if (p) stbi_image_free(p); });
-   assert(img);
-   filament::Texture* texture = filament::Texture::Builder().width(uint32_t(w)).height(uint32_t(h))
-                                                                 .levels(1).sampler(filament::Texture::Sampler::SAMPLER_2D)
-                                                                 .format(filament::backend::TextureFormat::RGBA8).build(*engine);
-   filament::Texture::PixelBufferDescriptor buffer(img.get(), size_t(w * h * 4),
-                                                   filament::Texture::Format::RGBA, filament::Texture::Type::UBYTE);
+   unsigned char* img = stbi_load(textureFile.c_str(), &w, &h, &channels, 4);
+   assert(img != nullptr);
+   filament::Texture* texture = filament::Texture::Builder().width(uint32_t(w)).height(uint32_t(h)).
+                                                             levels(1).sampler(filament::Texture::Sampler::SAMPLER_2D).
+                                                             format(filament::backend::TextureFormat::RGBA8).build(*engine);
+   filament::Texture::PixelBufferDescriptor buffer(img, size_t(w * h * 4),
+                                                   filament::Texture::Format::RGBA, filament::Texture::Type::UBYTE,
+                                                   [](void* p, size_t size, void* user) { if (p) stbi_image_free(p); });
    texture->setImage(*engine, 0, std::move(buffer));
-   (*texMaterialNode)("albedo", texture, filament::TextureSampler::MinFilter::LINEAR,
-                        filament::TextureSampler::MagFilter::LINEAR);
+   texMaterialNode->setTexture("albedo", texture, filament::TextureSampler::MinFilter::LINEAR,
+                               filament::TextureSampler::MagFilter::LINEAR);
    bulb::AffineTransform* triangleTransform3 = graph->make_affine_transform("Triangle 3 Transform", filament::math::mat3(1),
-                                                                            filament::math::double3(0.25, -0.25, 0.95),
-                                                                            filament::math::double3(0.25, 0.25, 1));
-   triangleTransform3->set_name("Transform 3");
+                                                                            filament::math::double3(0, 0, 0.08),
+                                                                            filament::math::double3(0.025, 0.025, 1));
    texMaterialNode->add_child(triangleTransform3);
    bulb::Geometry* triangleNode3 = graph->make_geometry("Triangle 3");
    texvb = filament::VertexBuffer::Builder().vertexCount(3).bufferCount(1)
@@ -307,66 +405,103 @@ bool create_graph()
    texvb->setBufferAt(*engine, 0, filament::VertexBuffer::BufferDescriptor(TEX_TRIANGLE_VERTICES.data(), 60, nullptr));
    texib->setBuffer(*engine, filament::IndexBuffer::BufferDescriptor(TEX_TRIANGLE_INDICES, 6, nullptr));
    filament::RenderableManager::Builder(1).boundingBox(to_box(TEX_TRIANGLE_VERTICES))
-                                          .geometry(0, filament::RenderableManager::PrimitiveType::TRIANGLES, texvb, texib, 0, 3)
-                                          .culling(false)
-                                          .receiveShadows(false)
-                                          .castShadows(false)
-                                          .build(*engine, triangleNode3->get_renderable());
+                                          .geometry(0, filament::RenderableManager::PrimitiveType::TRIANGLES, texvb,
+                                                    texib, 0, 3).
+                                          culling(false).receiveShadows(false).castShadows(false).
+                                          build(*engine, triangleNode3->get_renderable());
    triangleTransform3->add_child(triangleNode3);
 
    create_cube(engine.get(), graph.get(), root);
 
+   bulb::AssetReader& reader = bulb::AssetReader::instance();
+   std::vector<char> materialData;
+   reader.read_asset_vector("samples/material/bakedTexture", materialData);
+//   if (! materialData.empty())
+//   {
+//      filament::Material* material = filament::Material::Builder().package(materialData.data(),
+//                                                                           materialData.size()).build(*engine);
+//      if (material != nullptr)
+//      {
+//         filament::TextureSampler backgroundSampler = filament::TextureSampler(filament::TextureSampler::MinFilter::LINEAR,
+//                                                                               filament::TextureSampler::MagFilter::LINEAR);
+//         material->getDefaultInstance()->setParameter("albedo", texture, backgroundSampler);
+//         filament::Texture* texture = graph->add_background(-1, window->width, window->height, material, backgroundSampler);
+//         struct D { void operator()(unsigned char* p) const { if (p) stbi_image_free(p); }; };
+//         D d;
+//         int width, height, channels=3, reqChannels;
+//         filament::Texture::InternalFormat texFormat = texture->getFormat();
+//         if (texFormat == filament::Texture::InternalFormat::RGBA8)
+//            reqChannels = 4;
+//         else
+//            reqChannels = 3;
+//         unsigned char *pdata = nullptr;
+//         std::unique_ptr<unsigned char, D> data(stbi_load("samples/texture/stars.png", &width, &height, &channels,
+//                                                          reqChannels), d);
+//         size_t size = window->width*window->height*reqChannels;
+//         std::unique_ptr<unsigned char[]> resizedData(new unsigned char[size]);
+//         if ( (width != window->width) || (height != window->height) )
+//         {
+//
+//            if (! stbir_resize_uint8(data.get(), width, height, 0, resizedData.get(), window->width, window->height, 0,
+//                                     reqChannels))
+//               std::cerr << "Error resizing background image" << std::endl;
+//            else
+//               pdata = resizedData.get();
+//         }
+//         else
+//            pdata = data.get();
+//         if (pdata)
+//            graph->set_background(pdata);
+//      }
+//   }
+   filament::LinearColor lightColor = filament::Color::toLinear<filament::ACCURATE>(filament::sRGBColor(0.98f, 0.98f, 0.98f));
+   graph->add_sunlight(lightColor, { 0, -1, -0.8 }, 200000.0f);
    graph->end_updating();
    return true;
 }
+
+filament::Material* cubeMaterial = nullptr;
 
 bool create_cube(filament::Engine* engine, bulb::SceneGraph* graph, bulb::Composite* root)
 //----------------------------------------------------------------------------------------
 {
    filament::math::quat rotation = filament::math::quat::fromAxisAngle(normalize(filament::math::double3(1, 1, 0)),
                                                                        bulb::pi<double>/4.0);
-   bulb::AffineTransform* cubeTransform = graph->make_affine_transform("Cube", rotation, filament::math::double3(0, 0, 0.25), 0.25);
+   bulb::AffineTransform* cubeTransform = graph->make_affine_transform("CubeTransform", rotation,
+                                                                       filament::math::double3(-0.05, -0.001, -0.05), 0.02f);
    root->add_child(cubeTransform);
    bulb::AssetReader& reader = bulb::AssetReader::instance();
    std::vector<char> materialData;
-   reader.read_asset_vector("samples/material/cube.cmat", materialData);
-   filament::Material* cubeMaterial = filament::Material::Builder().package(materialData.data(), materialData.size()).build(*engine);
+   reader.read_asset_vector("samples/material/cube", materialData);
+//   reader.read_asset_vector("assets/bakedTexture", materialData);
+   cubeMaterial = filament::Material::Builder().package(materialData.data(), materialData.size()).build(*engine);
    int w, h, channels;
-   std::shared_ptr<unsigned char> img(stbi_load(cubeTextureFile.c_str(), &w, &h, &channels, 4),
-                                      [](unsigned char* p) { if (p) stbi_image_free(p); });
+   unsigned char* img = stbi_load(cubeTextureFile.c_str(), &w, &h, &channels, 4);
    if (! img)
    {
       std::cerr <<  "Error opening cube texture " << cubeTextureFile << std::endl;
       return false;
    }
-   monoTexture = filament::Texture::Builder().width(uint32_t(w)).height(uint32_t(h))
-                                                                 .levels(1).sampler(filament::Texture::Sampler::SAMPLER_2D)
-                                                                 .format(filament::backend::TextureFormat::RGBA8).build(*engine);
-   filament::Texture::PixelBufferDescriptor buffer(img.get(), size_t(w * h * 4),
-                                                   filament::Texture::Format::RGBA, filament::Texture::Type::UBYTE);
+   monoTexture = filament::Texture::Builder().width(uint32_t(w)).height(uint32_t(h)).
+                                              levels(1).sampler(filament::Texture::Sampler::SAMPLER_2D).
+                                              format(filament::backend::TextureFormat::RGBA8).
+                                              build(*engine);
+   filament::Texture::PixelBufferDescriptor buffer(img, size_t(w * h * 4),
+                                                   filament::Texture::Format::RGBA, filament::Texture::Type::UBYTE,
+                                                   [](void* p, size_t size, void* user) { if (p) stbi_image_free(p); });
    monoTexture->setImage(*engine, 0, std::move(buffer));
    cubeMaterial->setDefaultParameter("albedo", monoTexture, monoSampler);
    cubeMaterial->setDefaultParameter("metallic", 1.0f);
    cubeMaterial->setDefaultParameter("roughness", 0.4f);
    cubeMaterial->setDefaultParameter("reflectance", 0.4f);
    cubeMaterial->setDefaultParameter("anisotropy", 0.0f);
-   bulb::Geometry* cubeNode = graph->make_geometry("Cube", cubeMaterial);
+   bulb::Geometry* cubeNode = graph->make_geometry("Cube");
    if (! cubeNode->open_filamesh(cubeModel.c_str(), cubeMaterial))
    {
       std::cerr << "Error opening filamesh mesh file " << cubeModel << std::endl;
       return false;
    }
-   filament::LinearColor lightColor = filament::Color::toLinear<filament::ACCURATE>(filament::sRGBColor(0.98f, 0.92f, 0.89f));
-   cubeTransform->add_child(cubeNode);
 
-   bulb::AffineTransform* cubeLightTransform = graph->make_affine_transform("Cube Light Transform", filament::math::mat3(1),
-                                                                    filament::math::double3(0, 0, 0),
-                                                                    filament::math::double3(1, 1, 1));
-   root->add_child(cubeLightTransform);
-   bulb::PositionalLight* pointLightNode = graph->make_pointlight("Point", lightColor, filament::math::float3({0, 0, 0.5}),
-                                                                 filament::math::float3({0, 0, -1}), 5000.0f,
-                                                                 filament::LightManager::EFFICIENCY_LED);
-   cubeLightTransform->add_child(pointLightNode);
-   graph->add_sunlight(lightColor, { 0, -1, -0.8 }, 300000.0f);
+   cubeTransform->add_child(cubeNode);
    return true;
 }

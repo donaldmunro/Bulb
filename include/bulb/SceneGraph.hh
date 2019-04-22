@@ -12,6 +12,10 @@
 #include "filament/Renderer.h"
 #include "filament/Scene.h"
 #include "filament/Material.h"
+#include "filament/Texture.h"
+#include "filament/TextureSampler.h"
+#include "utils/EntityManager.h"
+#include "utils/Entity.h"
 #include "filament/LightManager.h"
 #include "filament/Color.h"
 #include "math/mat3.h"
@@ -132,6 +136,14 @@ namespace bulb
       utils::Entity& add_directional_light(const char* name, filament::LinearColor color, filament::math::float3 direction, float intensity =110000.0f,
                                  bool hasShadows =true);
 
+      filament::Texture* add_background(int z, uint32_t width, uint32_t height, filament::Material* backgroundMaterial,
+                                        filament::TextureSampler backgroundSampler =
+                                                 filament::TextureSampler(filament::TextureSampler::MinFilter::LINEAR,
+                                                                          filament::TextureSampler::MagFilter::LINEAR));
+      filament::Texture* get_background_texture() { return backgroundTexture; }
+      filament::TextureSampler& get_background_sampler() { return backgroundSampler; }
+      bool set_background(unsigned char* data, filament::backend::BufferDescriptor::Callback dataDeletor =nullptr);
+
       void remove_directional_light(const char* name);
 
       bool render(PostRenderCallback postRenderCallback =PostRenderCallback(), void* postRenderParams = nullptr);
@@ -154,6 +166,12 @@ namespace bulb
       std::shared_ptr<filament::Scene> scenePtr;
       std::vector<std::weak_ptr<SceneCallback>> scene_listeners;
       utils::Entity sun;
+      filament::Material* backgroundMaterial = nullptr;
+      filament::Texture* backgroundTexture = nullptr;
+      filament::TextureSampler backgroundSampler{filament::TextureSampler::MinFilter::LINEAR,
+                                                 filament::TextureSampler::MagFilter::LINEAR};
+      filament::Camera* backgroundCamera =nullptr;
+      utils::Entity background;
       std::unordered_map<std::string, bulb::Node*> nodesByName;
       std::unordered_map<std::string, utils::Entity> directional_lights;
       std::unordered_map<std::string, bulb::Transform*> animationTransforms;
