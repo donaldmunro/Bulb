@@ -32,6 +32,8 @@
 #include "stb/stb_image.h"
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "stb/stb_image_resize.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb/stb_image_write.h"
 
 #ifdef HAVE_SDL2
 #include "SDL.h"
@@ -90,7 +92,7 @@ filament::SwapChain* swapChain = nullptr;
 filament::View* view = nullptr;
 filament::VertexBuffer* vb = nullptr, *texvb = nullptr;
 filament::IndexBuffer* ib = nullptr, *texib = nullptr;
-filament::Camera* perspectiveCamera = nullptr, *orthoCamera = nullptr;
+filament::Camera* perspectiveCamera = nullptr;
 
 #ifndef HAVE_SDL2
 std::unique_ptr<Win> window;
@@ -211,6 +213,7 @@ bool process_sdl_events(int maxEvents =16)
 {
    SDL_Event ev;
    int count = 0;
+   static filament::math::float3 look(0, 0, -1);
    while (SDL_PollEvent(&ev))
    {
       if (count++ > maxEvents) return true;
@@ -224,6 +227,14 @@ bool process_sdl_events(int maxEvents =16)
             bool isShift = ((SDL_GetModState() & KMOD_SHIFT) != 0);
             if ( (key == SDL_SCANCODE_ESCAPE) || ( (key == SDL_SCANCODE_Q) && (isCtrl) ) )
                return false;
+//            switch (key)
+//            {
+//               case SDL_SCANCODE_LEFT:
+//                  break;
+//
+//               case SDL_SCANCODE_RIGHT:
+//                  break;
+//            }
          }
       }
    }
@@ -278,7 +289,6 @@ void destroy_graph()
    if (engine)
    {
       if (perspectiveCamera) engine->destroy(perspectiveCamera); perspectiveCamera = nullptr;
-      if (orthoCamera) engine->destroy(orthoCamera); orthoCamera = nullptr;
       if (vb) engine->destroy(vb); vb = nullptr;
       if (ib) engine->destroy(ib); ib = nullptr;
       graph.reset(nullptr);
@@ -312,18 +322,16 @@ bool create_graph()
    std::shared_ptr<filament::Engine> engine = bulb::Managers::instance().engine;
    swapChain = engine->createSwapChain(nativeWindow);
    view = engine->createView();
-   view->setClearColor(filament::Color::toLinear({0, 0.5, 0.5, 1.0}));
+   view->setClearColor(filament::Color::toLinear({0, 0.5, 0, 0}));
+   view->setClearTargets(false, true, false);
+   view->setPostProcessingEnabled(true);
    view->setViewport({ 0, 0, windowWidth, windowHeight });
    perspectiveCamera = engine->createCamera();
-   perspectiveCamera->lookAt({0, 0, 0.1}, {0, 0, -1}, {0, 1, 0});
+   perspectiveCamera->lookAt({0, 0, 0}, {0, 0, -1}, {0, 1, 0});
    std::cout << "Camera position " << perspectiveCamera->getPosition() << "Forward " << perspectiveCamera->getForwardVector() << std::endl;
 //   camera->setProjection(45, 16.0/9.0, 0.1, 1.0);
    perspectiveCamera->setProjection(50, double(windowWidth) / double(windowHeight), 0.0625, 10.0); //, filament::Camera::Fov::HORIZONTAL);
 //   std::cout << "Contains (-0.15, 0.06, " << TRIANGLE_Z << ") " << (perspectiveCamera->getFrustum().contains({-0.15, 0.06, TRIANGLE_Z}) < 0) << std::endl;
-   orthoCamera = engine->createCamera();
-   orthoCamera->setProjection(filament::Camera::Projection::ORTHO, -3, 3, -3 * double(windowHeight) / double(windowWidth),
-                              3 * double(windowHeight) / double(windowWidth), 0.0625, 10.0);
-   orthoCamera->lookAt({0, 0, 0.1}, {0, 0, -1}, {0, 1, 0});
    view->setCamera(perspectiveCamera);
    graph = std::make_unique<bulb::SceneGraph>(engine, swapChain, view);
 
@@ -413,47 +421,51 @@ bool create_graph()
 
    create_cube(engine.get(), graph.get(), root);
 
-   bulb::AssetReader& reader = bulb::AssetReader::instance();
-   std::vector<char> materialData;
-   reader.read_asset_vector("samples/material/bakedTexture", materialData);
-//   if (! materialData.empty())
-//   {
-//      filament::Material* material = filament::Material::Builder().package(materialData.data(),
-//                                                                           materialData.size()).build(*engine);
-//      if (material != nullptr)
-//      {
-//         filament::TextureSampler backgroundSampler = filament::TextureSampler(filament::TextureSampler::MinFilter::LINEAR,
-//                                                                               filament::TextureSampler::MagFilter::LINEAR);
-//         material->getDefaultInstance()->setParameter("albedo", texture, backgroundSampler);
-//         filament::Texture* texture = graph->add_background(-1, window->width, window->height, material, backgroundSampler);
-//         struct D { void operator()(unsigned char* p) const { if (p) stbi_image_free(p); }; };
-//         D d;
-//         int width, height, channels=3, reqChannels;
-//         filament::Texture::InternalFormat texFormat = texture->getFormat();
-//         if (texFormat == filament::Texture::InternalFormat::RGBA8)
-//            reqChannels = 4;
-//         else
-//            reqChannels = 3;
-//         unsigned char *pdata = nullptr;
-//         std::unique_ptr<unsigned char, D> data(stbi_load("samples/texture/stars.png", &width, &height, &channels,
-//                                                          reqChannels), d);
-//         size_t size = window->width*window->height*reqChannels;
-//         std::unique_ptr<unsigned char[]> resizedData(new unsigned char[size]);
-//         if ( (width != window->width) || (height != window->height) )
-//         {
-//
-//            if (! stbir_resize_uint8(data.get(), width, height, 0, resizedData.get(), window->width, window->height, 0,
-//                                     reqChannels))
-//               std::cerr << "Error resizing background image" << std::endl;
-//            else
-//               pdata = resizedData.get();
-//         }
-//         else
-//            pdata = data.get();
-//         if (pdata)
-//            graph->set_background(pdata);
-//      }
-//   }
+   filament::Texture* backgroundTexture = graph->set_background(windowWidth, windowHeight);
+   int imageWidth, imageHeight, imageChannels=3, reqChannels;
+   filament::Texture::InternalFormat texFormat = backgroundTexture->getFormat();
+   if (texFormat == filament::Texture::InternalFormat::RGBA8)
+      reqChannels = 4;
+   else
+      reqChannels = 3;
+   size_t size = windowWidth*windowHeight*reqChannels;
+   unsigned char *data = stbi_load("samples/images/Filament_Logo.png", &imageWidth, &imageHeight, &imageChannels,
+                                    reqChannels);
+   if (data != nullptr)
+   {
+      unsigned char* pdata = new unsigned char[size];
+      if ( (imageWidth != windowWidth) || (imageHeight != windowHeight) )
+      {
+         if (! stbir_resize_uint8(data, imageWidth, imageHeight, 0, pdata, windowWidth, windowHeight, 0,
+                                    reqChannels))
+         {
+            delete[] pdata;
+            pdata = nullptr;
+            std::cerr << "Error resizing background image" << std::endl;
+         }
+      }
+      else
+      {
+         memcpy(pdata, data, size);
+         pdata = data;
+      }
+      stbi_image_free(data);
+      if (pdata)
+      {
+         stbi_write_jpg("resized.jpg", windowWidth, windowHeight, 4, pdata, 9);
+         graph->set_background_image(pdata, windowWidth, windowHeight, 4,
+         [](void* p, size_t size, void* user)
+         //----------------------------------
+         {
+            if (p)
+            {
+               unsigned char *data = static_cast<unsigned char *>(p);
+               delete[] data;
+            }
+         });
+      }
+   }
+
    filament::LinearColor lightColor = filament::Color::toLinear<filament::ACCURATE>(filament::sRGBColor(0.98f, 0.98f, 0.98f));
    graph->add_sunlight(lightColor, { 0, -1, -0.8 }, 200000.0f);
    graph->end_updating();
@@ -468,7 +480,7 @@ bool create_cube(filament::Engine* engine, bulb::SceneGraph* graph, bulb::Compos
    filament::math::quat rotation = filament::math::quat::fromAxisAngle(normalize(filament::math::double3(1, 1, 0)),
                                                                        bulb::pi<double>/4.0);
    bulb::AffineTransform* cubeTransform = graph->make_affine_transform("CubeTransform", rotation,
-                                                                       filament::math::double3(-0.05, -0.001, -0.05), 0.02f);
+                                                                       filament::math::double3(0.2, -0.001, -0.5), 0.1f);
    root->add_child(cubeTransform);
    bulb::AssetReader& reader = bulb::AssetReader::instance();
    std::vector<char> materialData;
@@ -503,5 +515,10 @@ bool create_cube(filament::Engine* engine, bulb::SceneGraph* graph, bulb::Compos
    }
 
    cubeTransform->add_child(cubeNode);
+   filament::LinearColor lightColor = filament::Color::toLinear<filament::ACCURATE>(filament::sRGBColor(0.5f, 0.5f, 0.5f));
+   bulb::PositionalLight* cubeLight = graph->make_pointlight("Cube Light", lightColor,
+                                                             filament::math::double3(0.15, 0.01, -0.35),
+                                                             filament::math::float3(0, 0.1, -1), 5000.0f, 0.3f);
+   root->add_child(cubeLight);
    return true;
 }

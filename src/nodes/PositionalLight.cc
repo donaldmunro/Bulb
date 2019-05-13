@@ -28,7 +28,7 @@ namespace bulb
    //----------------------------------------------------------------------------------------------
    {
       filament::LightManager::Builder(filament::LightManager::Type::POINT)
-            .color(color).intensity(intensity, efficiency).position(initialPosition)
+            .color(color).intensity(intensity, efficiency).position(initialPosition).direction(direction)
             .falloff(fade).build(*Managers::instance().engine, renderedEntity);
    }
 

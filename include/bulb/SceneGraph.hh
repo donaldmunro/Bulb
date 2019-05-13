@@ -24,7 +24,6 @@
 #include "math/vec3.h"
 #include "math/vec4.h"
 
-
 #include "bulb/nodes/Node.hh"
 #include "bulb/nodes/Composite.hh"
 #include "bulb/nodes/Material.hh"
@@ -56,8 +55,10 @@ namespace bulb
    {
    public:
       SceneGraph(std::shared_ptr<filament::Engine>& engine, filament::SwapChain* swapChain, filament::View* view) :
-         engine(engine), view(view), swapchain(swapChain), renderer(engine->createRenderer()),
-         dirty(true), isUpdating(false), scenePtr(engine->createScene(), SceneDeleter(engine)) { }
+         engine(engine), view(view), foregroundCamera(&view->getCamera()), swapchain(swapChain), renderer(engine->createRenderer()),
+         dirty(true), isUpdating(false), scenePtr(engine->createScene(), SceneDeleter(engine))
+         {
+         }
 
       bool is_dirty() { return dirty; }
 
@@ -136,13 +137,14 @@ namespace bulb
       utils::Entity& add_directional_light(const char* name, filament::LinearColor color, filament::math::float3 direction, float intensity =110000.0f,
                                  bool hasShadows =true);
 
-      filament::Texture* add_background(int z, uint32_t width, uint32_t height, filament::Material* backgroundMaterial,
+      filament::Texture* set_background(uint32_t width, uint32_t height,
                                         filament::TextureSampler backgroundSampler =
                                                  filament::TextureSampler(filament::TextureSampler::MinFilter::LINEAR,
                                                                           filament::TextureSampler::MagFilter::LINEAR));
       filament::Texture* get_background_texture() { return backgroundTexture; }
       filament::TextureSampler& get_background_sampler() { return backgroundSampler; }
-      bool set_background(unsigned char* data, filament::backend::BufferDescriptor::Callback dataDeletor =nullptr);
+      bool set_background_image(unsigned char* data, uint32_t width, uint32_t height, uint32_t channels,
+                                filament::backend::BufferDescriptor::Callback dataDeletor =nullptr);
 
       void remove_directional_light(const char* name);
 
@@ -157,21 +159,27 @@ namespace bulb
    protected:
       std::shared_ptr<filament::Engine> engine;
       filament::View* view;
+      filament::Camera* foregroundCamera;
       filament::SwapChain* swapchain;
       std::unique_ptr<bulb::Composite> root;
       std::vector<std::unique_ptr<bulb::Node>> nodes;
       filament::Renderer* renderer;
-      bool dirty;
+      bool dirty, backgroundDirty = false;
       std::atomic_bool isUpdating;
       std::shared_ptr<filament::Scene> scenePtr;
       std::vector<std::weak_ptr<SceneCallback>> scene_listeners;
       utils::Entity sun;
-      filament::Material* backgroundMaterial = nullptr;
       filament::Texture* backgroundTexture = nullptr;
       filament::TextureSampler backgroundSampler{filament::TextureSampler::MinFilter::LINEAR,
                                                  filament::TextureSampler::MagFilter::LINEAR};
-      filament::Camera* backgroundCamera =nullptr;
+      std::shared_ptr<filament::Scene> backgroundScenePtr;
+      filament::View* backgroundView = nullptr;
+      filament::Material* backgroundMaterial = nullptr;
+      filament::Camera* backgroundCamera;
+      filament::VertexBuffer* backgroundVertexBuf = nullptr;
+      filament::IndexBuffer* backgroundIndexBuffer = nullptr;
       utils::Entity background;
+
       std::unordered_map<std::string, bulb::Node*> nodesByName;
       std::unordered_map<std::string, utils::Entity> directional_lights;
       std::unordered_map<std::string, bulb::Transform*> animationTransforms;

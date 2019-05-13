@@ -54,7 +54,7 @@ CMake variable in CMakeLists.txt. To build filament (assuming location /opt/fila
 
 ~~~~
 cd /opt/filament
-./build.sh -j -p desktop debug
+CC=/usr/bin/clang CXX=/usr/bin/clang++ ./build.sh -j -p desktop debug
 ./build.sh -j -p desktop -i debug
 ~~~~
 For Android:
@@ -62,6 +62,12 @@ For Android:
 ./build.sh -v  -j -p android debug
 ./build.sh -v  -j -p android -i debug
 ~~~~
+To build Bulb:
+cd {Bulb-Source}
+mkdir build
+cd build
+
+
 
 Loading gltf files from zip archives requires libzip to be findable by CMake (not required).
 The samples are best used with SDL2 although they should fall back to barebones XLib or Win32.
